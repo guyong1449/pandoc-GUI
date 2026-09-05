@@ -127,6 +127,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Start-PandocGUI.ps1
 
 或 `python app.py`。桌面版与 Obsidian 2.x 插件是独立入口，不共享界面或全部设置；插件无需安装 Python。
 
+PowerShell 启动器会优先使用用户 `tools/pandoc/pandoc-版本号/` 中最新的官方二进制目录，避免系统 PATH 内旧 Conda Pandoc 抢先。直接运行 `python app.py` 时仍按当前进程 PATH 查找；Obsidian 插件则使用设置中指定的路径。
+
 ## 开发与验证
 
 `obsidian-plugin/main.js` 为可直接加载的 CommonJS 文件，`styles.css` 使用 Obsidian 主题变量；`manifest.json` 声明桌面插件及版本。
