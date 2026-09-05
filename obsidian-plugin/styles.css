@@ -1,0 +1,11 @@
+.pandoc-studio-modal { width: min(850px, 94vw); }
+.pandoc-studio { --input-width: 100%; }
+.pandoc-studio .pandoc-hint { color: var(--text-muted); font-size: var(--font-ui-small); }
+.pandoc-studio .pandoc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.pandoc-studio .pandoc-paths { width: 100%; min-height: 85px; resize: vertical; }
+.pandoc-studio .pandoc-queue { background: var(--background-secondary); border-radius: 8px; padding: 10px; margin: 12px 0; max-height: 170px; overflow: auto; }
+.pandoc-studio .pandoc-queue-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.pandoc-studio .pandoc-queue-row span { flex: 1; overflow-wrap: anywhere; font-size: var(--font-ui-small); }
+.pandoc-studio .pandoc-status { margin: 10px 0; overflow-wrap: anywhere; }
+.pandoc-studio progress { width: 100%; accent-color: var(--interactive-accent); }
+.pandoc-studio .pandoc-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 230px; min-height: 80px; overflow: auto; padding: 12px; background: var(--background-secondary); border-radius: 8px; font-size: var(--font-ui-small); user-select: text; }
