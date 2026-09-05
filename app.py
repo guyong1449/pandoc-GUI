@@ -37,6 +37,14 @@ def prepare_markdown(source, directory):
         return f'![](<{candidate.resolve().as_posix()}>)'
 
     content = re.sub(r'!\[\[([^\]]+)\]\]', replace, content)
+    # Obsidian accepts align inside $$; LaTeX requires aligned there.
+    def normalize_math(match):
+        block = match[0]
+        for environment in ('align*', 'align'):
+            block = block.replace('\\begin{' + environment + '}', '\\begin{aligned}')
+            block = block.replace('\\end{' + environment + '}', '\\end{aligned}')
+        return block
+    content = re.sub(r'\$\$[\s\S]*?\$\$', normalize_math, content)
     result = directory / source.name
     result.write_text(content, encoding='utf-8')
     return result

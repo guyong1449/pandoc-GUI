@@ -27,3 +27,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Start-PandocGUI.ps1
 Obsidian Markdown 图片嵌入会在转换副本中解析，先查找相对路径，再在带 `.obsidian` 的所属 Vault 下按图片名查找。遇到缺图或重名会报告错误。仅支持图片嵌入，不展开其他笔记。PDF 代码块自动换行。
 
 转换在本机完成。请仅转换可信文档，尤其是包含原始 LaTeX 的文件。输出完成前请等待当前批次结束。
+
+启用 Obsidian 处理时，也会将 `$$` 内的 `align` / `align*` 转为 LaTeX 支持的 `aligned`，避免公式嵌套报错。
