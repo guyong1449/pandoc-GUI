@@ -6,12 +6,92 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import argparse
+from urllib.parse import urlparse, unquote, parse_qs
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 FORMATS = {'PDF': '.pdf', 'Word (DOCX)': '.docx', 'HTML': '.html',
            'Markdown': '.md', 'EPUB': '.epub', 'LaTeX': '.tex', '纯文本': '.txt'}
+
+COLORS = dict(bg='#1e1e2e', surface='#313244', overlay='#45475a',
+              text='#cdd6f4', subtext='#a6adc8', blue='#89b4fa',
+              green='#a6e3a1', mantle='#181825', red='#f38ba8')
+
+
+def parse_paths(text, vault):
+    """Accept one local path/link per line, including Explorer's quoted paths."""
+    paths = []
+    for line in text.splitlines():
+        value = line.strip().strip('"').strip("'")
+        if not value:
+            continue
+        markdown = re.fullmatch(r'\[[^\]]*\]\((.*?)\)', value)
+        if markdown:
+            value = markdown[1].strip('<>')
+        value = value.strip('<>')
+        if value.startswith('obsidian://'):
+            query = parse_qs(urlparse(value).query)
+            linked_vault = query.get('vault', [''])[0]
+            if linked_vault and linked_vault not in {Path(vault).name, str(vault)}:
+                raise ValueError('此 Obsidian 链接属于其他 Vault，请先切换 Vault。')
+            value = query.get('file', [''])[0]
+            if not value:
+                raise ValueError('Obsidian 链接缺少 file 参数。')
+        elif value.startswith('file://'):
+            url = urlparse(value)
+            value = unquote(url.path)
+            if url.netloc and url.netloc != 'localhost':
+                value = '//' + url.netloc + value
+            elif re.match(r'^/[A-Za-z]:', value):
+                value = value[1:]
+        elif re.match(r'^https?://', value):
+            raise ValueError('请粘贴本地文件路径、file:// 或 Obsidian 链接；暂不下载网页。')
+        if value.startswith('[[') and value.endswith(']]'):
+            value = value[2:-2].split('|')[0].split('#')[0]
+        path = Path(value).expanduser()
+        if re.match(r'^/[A-Za-z]:', value):
+            path = Path(value[1:])
+        if not path.is_absolute():
+            path = Path(vault) / path
+        if not path.exists() and '\\_' in value:
+            # Only interpret Markdown escapes when the literal path is absent.
+            alternate = Path(value.replace('\\_', '_'))
+            path = alternate if alternate.is_absolute() else Path(vault) / alternate
+        if not path.exists() and not path.suffix:
+            path = path.with_suffix('.md')
+        if not path.is_file():
+            raise ValueError(f'文件不存在：{path}')
+        if path.suffix.lower() == '.pdf':
+            raise ValueError('Pandoc 不支持以 PDF 为输入，请选择原始文档。')
+        if path.resolve() not in paths:
+            paths.append(path.resolve())
+    return paths
+
+
+def apply_theme(root):
+    root.configure(bg=COLORS['bg'])
+    root.option_add('*Font', ('Microsoft YaHei UI', 10))
+    root.option_add('*TCombobox*Listbox.background', COLORS['surface'])
+    root.option_add('*TCombobox*Listbox.foreground', COLORS['text'])
+    style = ttk.Style(root)
+    style.theme_use('clam')
+    style.configure('.', background=COLORS['bg'], foreground=COLORS['text'])
+    style.configure('TFrame', background=COLORS['bg'])
+    style.configure('Card.TFrame', background=COLORS['surface'])
+    style.configure('TLabel', background=COLORS['bg'], foreground=COLORS['text'])
+    style.configure('Muted.TLabel', foreground=COLORS['subtext'])
+    style.configure('TButton', background=COLORS['overlay'], foreground=COLORS['text'], borderwidth=0, padding=(12, 7))
+    style.map('TButton', background=[('active', COLORS['blue'])], foreground=[('active', COLORS['bg'])])
+    style.configure('Go.TButton', background=COLORS['green'], foreground=COLORS['bg'])
+    style.map('Go.TButton', background=[('disabled', COLORS['overlay']), ('active', COLORS['blue'])])
+    for name in ('TEntry', 'TCombobox'):
+        style.configure(name, fieldbackground=COLORS['surface'], foreground=COLORS['text'], padding=5, bordercolor=COLORS['overlay'], arrowcolor=COLORS['blue'])
+        style.map(name, fieldbackground=[('readonly', COLORS['surface'])], foreground=[('readonly', COLORS['text'])])
+    style.configure('TCheckbutton', background=COLORS['bg'], foreground=COLORS['text'])
+    style.map('TCheckbutton', background=[('active', COLORS['bg'])])
+    style.configure('Horizontal.TProgressbar', background=COLORS['green'], troughcolor=COLORS['surface'], borderwidth=0)
 
 
 def prepare_markdown(source, directory):
@@ -79,11 +159,13 @@ def convert(source, output, fmt, engine, font, obsidian):
 
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, vault=None, inputs=()):
         self.root = root
+        apply_theme(root)
         root.title('Pandoc GUI · 文档转换')
-        root.geometry('850x680')
-        root.minsize(720, 560)
+        root.geometry('880x850')
+        root.minsize(760, 750)
+        self.vault = tk.StringVar(value=str(vault or Path.home()))
         self.files = []
         self.events = queue.Queue()
         self.busy = False
@@ -95,13 +177,24 @@ class App:
         self.status = tk.StringVar(value='选择文件，设置格式，然后开始转换。')
         frame = ttk.Frame(root, padding=20)
         frame.pack(fill='both', expand=True)
-        ttk.Label(frame, text='文档转换', font=('Microsoft YaHei UI', 22, 'bold')).pack(anchor='w')
-        ttk.Label(frame, text='Pandoc · 批量转换 · 自动保留已有文件').pack(anchor='w', pady=(0, 12))
+        ttk.Label(frame, text='Pandoc Studio', font=('Segoe UI', 22, 'bold')).pack(anchor='w')
+        ttk.Label(frame, text='文档转换  /  Obsidian 工作台', style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
+        vault_row = ttk.Frame(frame)
+        vault_row.pack(fill='x', pady=(0, 8))
+        ttk.Label(vault_row, text='Vault  ').pack(side='left')
+        ttk.Entry(vault_row, textvariable=self.vault).pack(side='left', fill='x', expand=True)
+        ttk.Button(vault_row, text='选择库', command=self.choose_vault).pack(side='left', padx=(8, 0))
+        ttk.Label(frame, text='粘贴路径或链接 · 每行一个 · 支持带引号路径、file://、obsidian://', style='Muted.TLabel').pack(anchor='w')
+        self.path_input = tk.Text(frame, height=3, wrap='none', bg=COLORS['mantle'], fg=COLORS['text'], insertbackground=COLORS['blue'], relief='flat', padx=10, pady=8)
+        self.path_input.pack(fill='x', pady=8)
+        self.path_input.bind('<Control-Return>', lambda event: self.parse_input())
         row = ttk.Frame(frame)
         row.pack(fill='x')
         ttk.Button(row, text='添加文件…', command=self.add).pack(side='left')
+        ttk.Button(row, text='解析输入', command=self.parse_input).pack(side='left', padx=(8, 0))
+        ttk.Button(row, text='粘贴并解析', command=self.paste).pack(side='left', padx=(8, 0))
         ttk.Button(row, text='移除选中', command=self.remove).pack(side='left', padx=8)
-        self.listbox = tk.Listbox(frame, height=7, selectmode='extended', font=('Microsoft YaHei UI', 10))
+        self.listbox = tk.Listbox(frame, height=5, selectmode='extended', font=('Microsoft YaHei UI', 10), bg=COLORS['surface'], fg=COLORS['text'], selectbackground=COLORS['blue'], selectforeground=COLORS['bg'], relief='flat', highlightthickness=0)
         self.listbox.pack(fill='both', expand=True, pady=8)
         settings = ttk.Frame(frame)
         settings.pack(fill='x')
@@ -118,22 +211,55 @@ class App:
         ttk.Checkbutton(frame, text='解析 Obsidian 图片引用 ![[图片]]（在所属 Vault 内查找）', variable=self.obsidian).pack(anchor='w', pady=8)
         actions = ttk.Frame(frame)
         actions.pack(fill='x')
-        self.start = ttk.Button(actions, text='开始转换', command=self.run)
+        self.start = ttk.Button(actions, text='开始转换', command=self.run, style='Go.TButton')
         self.start.pack(side='left')
         ttk.Button(actions, text='打开输出文件夹', command=self.open_folder).pack(side='left', padx=8)
         self.progress = ttk.Progressbar(frame, mode='determinate')
         self.progress.pack(fill='x', pady=10)
         ttk.Label(frame, textvariable=self.status).pack(anchor='w')
-        self.log = tk.Text(frame, height=8, wrap='word', state='disabled', font=('Microsoft YaHei UI', 9))
+        self.log = tk.Text(frame, height=6, wrap='word', state='disabled', font=('Microsoft YaHei UI', 9), bg=COLORS['mantle'], fg=COLORS['subtext'], relief='flat', padx=10, pady=8)
         self.log.pack(fill='both', expand=True, pady=(8, 0))
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.after(100, self.poll)
+        for name in inputs:
+            self.add_path(Path(name))
+
+    def add_path(self, path):
+        if not path.is_file():
+            messagebox.showerror('文件路径', f'文件不存在：{path}')
+            return
+        name = str(path.resolve())
+        if name not in self.files:
+            self.files.append(name)
+            self.listbox.insert('end', name)
+
+    def choose_vault(self):
+        folder = filedialog.askdirectory(title='选择 Obsidian Vault')
+        if folder:
+            self.vault.set(folder)
+
+    def parse_input(self):
+        try:
+            paths = parse_paths(self.path_input.get('1.0', 'end'), self.vault.get())
+            for path in paths:
+                self.add_path(path)
+            self.status.set(f'已解析 {len(paths)} 个文件，队列共 {len(self.files)} 个。')
+        except ValueError as error:
+            messagebox.showerror('路径解析', str(error))
+
+    def paste(self):
+        try:
+            value = self.root.clipboard_get()
+        except tk.TclError:
+            messagebox.showinfo('剪贴板', '剪贴板中没有文本。')
+            return
+        self.path_input.delete('1.0', 'end')
+        self.path_input.insert('1.0', value)
+        self.parse_input()
 
     def add(self):
         for name in filedialog.askopenfilenames(filetypes=[('可转换文档', '*.md *.markdown *.docx *.html *.htm *.tex *.rst *.epub *.odt *.txt'), ('所有文件', '*.*')]):
-            if name not in self.files:
-                self.files.append(name)
-                self.listbox.insert('end', name)
+            self.add_path(Path(name))
 
     def remove(self):
         for index in reversed(self.listbox.curselection()):
@@ -214,6 +340,10 @@ class App:
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Pandoc desktop converter')
+    parser.add_argument('--vault', default=str(Path.home()))
+    parser.add_argument('--input', action='append', default=[])
+    args = parser.parse_args()
     window = tk.Tk()
-    App(window)
+    App(window, args.vault, args.input)
     window.mainloop()

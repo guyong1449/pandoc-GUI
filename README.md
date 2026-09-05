@@ -1,5 +1,25 @@
 # Pandoc GUI
 
+界面采用 Catppuccin Mocha 深色配色，参考 VPN Auto-Connect 的深色分区和浅绿主按钮。
+
+## 粘贴路径
+
+可在窗口上方输入区直接粘贴，每行一个文件，点击“解析输入”（或 Ctrl+Enter）；“粘贴并解析”会读取剪贴板。
+
+支持 Windows 完整路径（含引号和空格）、Markdown 文件链接、`file://`、`obsidian://open?file=...` 和 Vault 相对路径。相对路径按窗口中的 Vault 定位。HTTP/HTTPS 网页地址暂不下载；PDF 不能作为 Pandoc 输入。
+
+## Obsidian 插件
+
+将 `obsidian-plugin` 中的 `manifest.json`、`main.js` 复制到 Vault 的 `.obsidian/plugins/pandoc-studio/`，然后在 Obsidian 第三方插件中启用 Pandoc Studio。
+
+- 命令面板：`Pandoc Studio: 转换当前文档` 或 `打开转换工作台`。
+- 文件右键：`使用 Pandoc 转换`。
+- 功能区：文档导出图标。
+
+插件是桌面桥接入口，会打开本机 Pandoc 窗口并自动带入当前文档和 Vault，在窗口中选择输出格式和位置。仅支持桌面版，依赖本机 Python 和 Pandoc。可在插件设置中指定 Python 可执行文件及 `app.py` 的完整路径。插件使用参数数组调用进程，不将笔记路径拼接到 shell 命令中。
+
+PowerShell 启动器也支持 `-Vault "你的 Vault 完整路径"`。
+
 Windows 上的轻量文档转换界面，使用 Python 标准库 Tkinter 和 Pandoc。
 
 ## 启动
