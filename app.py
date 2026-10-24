@@ -94,9 +94,36 @@ def apply_theme(root):
     style.configure('Horizontal.TProgressbar', background=COLORS['green'], troughcolor=COLORS['surface'], borderwidth=0)
 
 
+def outside_code(text, transform):
+    """Apply export fixes to prose/math while preserving YAML and code examples."""
+    frontmatter = re.match(r'\A---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)', text)
+    prefix = frontmatter[0] if frontmatter else ''
+    text = text[len(prefix):]
+    parts = re.split(r'(^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\2[ \t]*\r?(?:\n|$))', text, flags=re.M)
+    result = []
+    for index, part in enumerate(parts):
+        if index % 3 == 1:
+            result.append(part)
+        elif index % 3 == 0:
+            # Treat an entire math block as one token, including TeX backticks.
+            tokens = re.split(r'(\$\$[\s\S]*?\$\$|`+[^`\n]*`+)', part)
+            result.extend(token if i % 2 and token.startswith('`') else transform(token)
+                          for i, token in enumerate(tokens))
+    return prefix + ''.join(result)
+
+
+def normalize_display_math(text):
+    def normalize(match):
+        math = re.sub(r'\\(begin|end)\{align\*?\}', lambda m: '\\' + m[1] + '{aligned}', match[0])
+        # Pandoc ends a display-math block at a blank line. Keep a newline so
+        # a TeX % comment cannot swallow the following equation or row break.
+        return re.sub(r'(\r?\n)[ \t]*(?:\r?\n[ \t]*)+', r'\1', math)
+    return re.sub(r'(?<!\\)\$\$[\s\S]*?\$\$', normalize, text)
+
+
 def prepare_markdown(source, directory):
     """Resolve Obsidian image embeds without changing the source note."""
-    content = source.read_text(encoding='utf-8-sig')
+    content = source.read_bytes().decode('utf-8-sig')
     roots = [source.parent]
     for parent in source.parents:
         if (parent / '.obsidian').is_dir():
@@ -116,17 +143,10 @@ def prepare_markdown(source, directory):
             raise ValueError(f'暂不支持此 Obsidian 嵌入类型：{target}')
         return f'![](<{candidate.resolve().as_posix()}>)'
 
-    content = re.sub(r'!\[\[([^\]]+)\]\]', replace, content)
-    # Obsidian accepts align inside $$; LaTeX requires aligned there.
-    def normalize_math(match):
-        block = match[0]
-        for environment in ('align*', 'align'):
-            block = block.replace('\\begin{' + environment + '}', '\\begin{aligned}')
-            block = block.replace('\\end{' + environment + '}', '\\end{aligned}')
-        return block
-    content = re.sub(r'\$\$[\s\S]*?\$\$', normalize_math, content)
+    content = outside_code(content, lambda block: normalize_display_math(
+        re.sub(r'!\[\[([^\]]+)\]\]', replace, block)))
     result = directory / source.name
-    result.write_text(content, encoding='utf-8')
+    result.write_bytes(content.encode('utf-8'))
     return result
 
 

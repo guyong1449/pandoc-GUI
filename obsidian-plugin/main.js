@@ -1,4 +1,4 @@
-const { Plugin, Modal, FuzzySuggestModal, PluginSettingTab, Setting, Notice, MarkdownView } = require('obsidian');
+const { Plugin, Modal, FuzzySuggestModal, PluginSettingTab, Setting, Notice, MarkdownView, loadMathJax, finishRenderMath } = require('obsidian');
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
@@ -10,7 +10,7 @@ const FORMATS = { pdf: 'PDF', docx: 'Word (DOCX)', html: 'HTML', md: 'Markdown',
 const INPUTS = new Set(['md', 'markdown', 'txt', 'docx', 'html', 'htm', 'tex', 'rst', 'epub', 'odt', 'org', 'rtf']);
 const DEFAULTS = { pandoc: 'pandoc', engine: 'xelatex', format: 'pdf', output: 'Exports',
   font: process.platform === 'win32' ? 'Microsoft YaHei' : '', pageSize: 'a4', margin: '25mm',
-  toc: false, numberSections: false, obsidian: true, referenceDoc: '' };
+  toc: false, numberSections: false, obsidian: true, referenceDoc: '', cjkFont: '' };
 
 function parsePaths(text, vault, resolveLink) {
   const result = [];
@@ -44,8 +44,56 @@ function parsePaths(text, vault, resolveLink) {
 
 function outsideCode(text, transform) {
   // Keep fenced code and inline code literal during Obsidian syntax normalization.
-  return text.split(/(^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\2[ \t]*(?:\n|$))/gm)
-    .map((part, index) => index % 3 === 0 ? part.split(/(`+[^`\n]*`+)/g).map((p, i) => i % 2 ? p : transform(p)).join('') : index % 3 === 1 ? part : '').join('');
+  const frontmatter = text.match(/^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/)?.[0] || '';
+  return frontmatter + text.slice(frontmatter.length).split(/(^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\2[ \t]*\r?(?:\n|$))/gm)
+    .map((part, index) => index % 3 === 0 ? part.split(/(\$\$[\s\S]*?\$\$|`+[^`\n]*`+)/g)
+      .map((p, i) => i % 2 && p.startsWith('`') ? p : transform(p)).join('') : index % 3 === 1 ? part : '').join('');
+}
+
+function normalizeDisplayMath(text) {
+  return text.replace(/(?<!\\)\$\$[\s\S]*?\$\$/g, math => math
+    .replace(/\\(begin|end)\{align\*?\}/g, '\\$1{aligned}')
+    // Preserve a newline after % comments while removing Pandoc-breaking blank lines.
+    .replace(/(\r?\n)[ \t]*(?:\r?\n[ \t]*)+/g, '$1'));
+}
+
+async function preparePrintMath(el) {
+  // Native PDF export and Better Export PDF both render inside a .print tree.
+  // Use the async MathJax API: its synchronous API can throw a font-load retry.
+  if (!el.closest('.print')) return;
+  const nodes = el.matches('.math') ? [el] : [...el.querySelectorAll('.math')];
+  if (!nodes.length) return;
+  await loadMathJax();
+  const mathjax = globalThis.MathJax;
+  if (!mathjax?.tex2chtmlPromise) return;
+  let changed = false;
+  for (const node of nodes) {
+    const source = node.querySelector('mjx-math[data-latex]')?.getAttribute('data-latex')
+      || node.querySelector('annotation[encoding="application/x-tex"]')?.textContent
+      || (!node.querySelector('mjx-container') ? node.textContent : '');
+    if (!/\\begin\{(?:align\*?|aligned)\}/.test(source)) continue;
+    if (!node.querySelector('mjx-container') || node.querySelector('mjx-merror')) {
+      const rendered = await mathjax.tex2chtmlPromise(source, { display: node.classList.contains('math-block') });
+      node.replaceChildren(rendered);
+    }
+    changed = true;
+  }
+  if (!changed) return;
+  await finishRenderMath();
+  // Copy actual CSS rules, including dynamically inserted table/font rules,
+  // into the print document; style.textContent alone is incomplete in MathJax 4.
+  const sourceStyle = mathjax.chtmlStylesheet();
+  const css = mathjax.startup.adaptor.cssText?.(sourceStyle)
+    || Array.from(sourceStyle.sheet?.cssRules || [], rule => rule.cssText).join('\n')
+    || sourceStyle.textContent;
+  const doc = el.ownerDocument;
+  let style = doc.getElementById('pandoc-studio-print-math');
+  if (!style) {
+    style = doc.createElement('style');
+    style.id = 'pandoc-studio-print-math';
+    doc.head.appendChild(style);
+  }
+  style.textContent = css;
 }
 
 function prepareMarkdown(text, source, resolveLink) {
@@ -64,7 +112,7 @@ function prepareMarkdown(text, source, resolveLink) {
       const label = (alias || target).replace(/([\[\]])/g, '\\$1');
       return file ? `[${label}](<${file.replace(/\\/g, '/')}>)` : label;
     });
-    return block.replace(/\$\$[\s\S]*?\$\$/g, math => math.replace(/\\(begin|end)\{align\*?\}/g, '\\$1{aligned}'));
+    return normalizeDisplayMath(block);
   });
 }
 
@@ -110,6 +158,7 @@ async function convert(source, settings, vault, resolveLink, onLog) {
       await fsp.writeFile(header, '\\usepackage{fvextra}\n\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\\\\{\\},breaklines=true,breakanywhere=true,fontsize=\\small}\n');
       args.push('--pdf-engine=' + settings.engine, '-V', 'geometry:margin=' + settings.margin, '-V', 'papersize=' + settings.pageSize, '-H', header);
       if (settings.font.trim()) args.push('-V', 'mainfont=' + settings.font.trim());
+      if (settings.cjkFont?.trim()) args.push('-V', 'CJKmainfont=' + settings.cjkFont.trim(), '-V', 'CJKoptions=AutoFakeBold=2,AutoFakeSlant=0.2');
     }
     await runProcess(settings.pandoc, args, path.dirname(source), onLog);
     const stem = path.basename(source, path.extname(source));
@@ -219,7 +268,8 @@ class StudioSettings extends PluginSettingTab {
     for (const [key, title, desc] of [
       ['pandoc', 'Pandoc 可执行文件', '可填 pandoc 或完整路径。Windows GUI 的 PATH 可能与终端不同。'],
       ['engine', 'PDF 引擎', 'xelatex、lualatex 或相应可执行文件的完整路径。'],
-      ['font', 'PDF 正文字体', '填写本机已安装字体；留空使用 LaTeX 默认字体。中文推荐 Microsoft YaHei。'],
+      ['font', 'PDF 正文字体', '填写本机已安装字体；中英分开设置时，英文字体可填 Times New Roman。'],
+      ['cjkFont', 'PDF 中文字体', '可选；华文宋体填 STSong，宋体填 SimSun。启用中文自动换行，留空沿用正文字体。'],
       ['output', '默认输出目录', '默认 Exports，位于当前 Vault；也支持完整路径。'],
       ['margin', 'PDF 页边距', '例如 25mm、2.5cm、1in。'],
       ['referenceDoc', 'Word 参考模板', '可选 .docx 文件，用于定义 Word 样式；支持 Vault 相对路径。']
@@ -244,6 +294,7 @@ module.exports = class PandocStudio extends Plugin {
   async onload() {
     this.settings = { ...DEFAULTS, ...await this.loadData() };
     this.busy = false; this.stopRequested = false;
+    this.registerMarkdownPostProcessor(preparePrintMath, 1000);
     this.addCommand({ id: 'convert-current', name: '转换当前文档', callback: () => new ConverterModal(this, this.app.workspace.getActiveFile()).open() });
     this.addCommand({ id: 'open-converter', name: '打开转换工作台', callback: () => new ConverterModal(this).open() });
     this.addRibbonIcon('file-output', 'Pandoc Studio', () => new ConverterModal(this, this.app.workspace.getActiveFile()).open());
@@ -260,4 +311,4 @@ module.exports = class PandocStudio extends Plugin {
   }
   onunload() { this.stopRequested = true; }
 };
-module.exports.core = { parsePaths, prepareMarkdown, convert, runProcess, DEFAULTS, FORMATS };
+module.exports.core = { parsePaths, prepareMarkdown, preparePrintMath, convert, runProcess, DEFAULTS, FORMATS };

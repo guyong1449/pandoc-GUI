@@ -15,7 +15,8 @@
 - PDF 支持字体、A4/Letter、页边距、标题编号、目录和长代码行自动换行。
 - Word 支持 `.docx` 参考样式模板。
 - HTML 使用 Pandoc 的资源嵌入模式，公式使用 MathML。
-- Obsidian 图片嵌入解析、普通 wikilink 转换，以及 `$$` 内 `align/align*` 的兼容处理；代码块中的示例保持原样。
+- Obsidian 图片嵌入解析、普通 wikilink 转换，以及 `$$` 内 `align/align*` 和公式空行的兼容处理；YAML、代码块和行内代码中的示例保持原样。
+- 启用 Pandoc Studio 时，为原生 PDF / Better Export PDF 的打印树补上异步公式重试和完整 MathJax 样式复制。
 - 设置页提供 Pandoc / PDF 引擎依赖检测。
 
 ## 安装
@@ -111,6 +112,10 @@ obsidian://open?vault=Notes&file=课程%2F算法%2F作业.md
 
 **PDF 报宏包缺失**：在 MiKTeX / TeX Live 中安装日志所列宏包后重试。
 
+**`aligned allowed only in math mode`**：升级到 2.0.1 并启用 Obsidian 兼容处理。导出副本会将 `$$` 内的 `align/align*` 转成 `aligned`，移除会让 Pandoc 拆断公式的空行；保留 `%` 注释后的换行及源笔记。
+
+**Better Export PDF 1.11.0 的公式打印不完整**：它的预览未等待异步 CSS 注入结束。可运行 `node tools/repair_pdf_math.js "你的 Vault/.obsidian/plugins/better-export-pdf/main.js"` 安装有备份、版本检查和重复运行保护的等待补丁，再重载该插件。该补丁只适用于经检查的 1.11.0 bundle，其他版本会拒绝修改。
+
 **图片缺失**：先在 Obsidian 中确认链接可用；图片嵌入使用 Vault 链接解析，普通 Markdown 图片按源文档目录与 Vault 目录查找。
 
 **更新后仍弹出 Python 窗口**：当前会话仍运行旧插件，请关闭再开启 Pandoc Studio。
@@ -137,9 +142,12 @@ PowerShell 启动器会优先使用用户 `tools/pandoc/pandoc-版本号/` 中�
 node --check obsidian-plugin/main.js
 node tests/test_plugin.js
 node tests/test_plugin.js --integration
+python -m unittest discover -s tests
 ```
 
 集成测试需要 Pandoc 与 XeLaTeX，会实际生成七种格式，检查 HTML 图片嵌入、重名编号、源文件保留和依赖缺失错误。测试在系统临时目录运行并清理自己的文件。
+
+公式回归在 Python 与 JS 两端复用 `tests/math-cases.json`；设置 `PANDOC_INTEGRATION=1` 可运行 Python 的真实 PDF / Pandoc AST 检查。`node tests/test_export_readiness.js <Better-Export-PDF-1.11.0-main.js>` 先复现旧版 CSS 时序错误，再验证补丁、重复运行与版本保护。可选的 `tests/test_print_math.js <MathJax-JS>` 使用本机 Obsidian 的 MathJax bundle 和通过 `NODE_PATH` 提供的 `jsdom`，检查打印副本、公式重试与样式复制。
 
 ```powershell
 # 生成可手动安装的 dist/pandoc-studio.zip

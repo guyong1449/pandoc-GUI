@@ -1,0 +1,67 @@
+[
+  {
+    "name": "align blank lines",
+    "input": "$$\n\\begin{align}\na &= b \\\\\n\nc &= d\n\\end{align}\n$$",
+    "expected": "$$\n\\begin{aligned}\na &= b \\\\\nc &= d\n\\end{aligned}\n$$"
+  },
+  {
+    "name": "align star",
+    "input": "$$\\begin{align*}a &= b\\end{align*}$$",
+    "expected": "$$\\begin{aligned}a &= b\\end{aligned}$$"
+  },
+  {
+    "name": "aligned blank lines",
+    "input": "$$\n\\begin{aligned}\na &= b \\\\\n\n c &= d\n\\end{aligned}\n$$",
+    "expected": "$$\n\\begin{aligned}\na &= b \\\\\nc &= d\n\\end{aligned}\n$$"
+  },
+  {
+    "name": "comments keep newline",
+    "input": "$$\n\\begin{align}\na &= b \\\\ % comment\n\n% separate comment\n\nc &= d\n\\end{align}\n$$",
+    "expected": "$$\n\\begin{aligned}\na &= b \\\\ % comment\n% separate comment\nc &= d\n\\end{aligned}\n$$"
+  },
+  {
+    "name": "backtick inside math",
+    "input": "$$\n\\begin{align}\n\\text{`a`} &= b \\\\\n\nc &= d\n\\end{align}\n$$",
+    "expected": "$$\n\\begin{aligned}\n\\text{`a`} &= b \\\\\nc &= d\n\\end{aligned}\n$$"
+  },
+  {
+    "name": "fenced examples",
+    "input": "```latex\n$$\n\\begin{align}\na &= b\n\n\\end{align}\n$$\n![[missing.png]]\n```\n",
+    "expected": "```latex\n$$\n\\begin{align}\na &= b\n\n\\end{align}\n$$\n![[missing.png]]\n```\n"
+  },
+  {
+    "name": "tilde examples",
+    "input": "~~~latex\n$$\\begin{align}a &= b\\end{align}$$\n![[missing.png]]\n~~~\n",
+    "expected": "~~~latex\n$$\\begin{align}a &= b\\end{align}$$\n![[missing.png]]\n~~~\n"
+  },
+  {
+    "name": "inline examples",
+    "input": "Use `$$\\begin{align}a &= b\\end{align}$$` and `![[missing.png]]`.",
+    "expected": "Use `$$\\begin{align}a &= b\\end{align}$$` and `![[missing.png]]`."
+  },
+  {
+    "name": "standalone latex unchanged",
+    "input": "\\begin{align}\na &= b\n\\end{align}\n",
+    "expected": "\\begin{align}\na &= b\n\\end{align}\n"
+  },
+  {
+    "name": "frontmatter unchanged",
+    "input": "---\ntitle: \"$$\\begin{align}a &= b\\end{align}$$\"\nexample: \"![[missing.png]]\"\n---\n\n$$\\begin{align}x &= 1\\end{align}$$",
+    "expected": "---\ntitle: \"$$\\begin{align}a &= b\\end{align}$$\"\nexample: \"![[missing.png]]\"\n---\n\n$$\\begin{aligned}x &= 1\\end{aligned}$$"
+  },
+  {
+    "name": "crlf math",
+    "input": "$$\r\n\\begin{align*}\r\nx &= 1 \\\\\r\n \r\ny &= 2\r\n\\end{align*}\r\n$$",
+    "expected": "$$\r\n\\begin{aligned}\r\nx &= 1 \\\\\r\ny &= 2\r\n\\end{aligned}\r\n$$"
+  },
+  {
+    "name": "ordinary dollars unchanged",
+    "input": "Price \\$5; inline $x + y$; code `$$`; math $$x+y$$.",
+    "expected": "Price \\$5; inline $x + y$; code `$$`; math $$x+y$$."
+  },
+  {
+    "name": "crlf fenced examples",
+    "input": "```latex\r\n$$\\begin{align}a &= b\\end{align}$$\r\n![[missing.png]]\r\n```\r\n",
+    "expected": "```latex\r\n$$\\begin{align}a &= b\\end{align}$$\r\n![[missing.png]]\r\n```\r\n"
+  }
+]

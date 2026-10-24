@@ -26,6 +26,7 @@ class Plugin {
   addRibbonIcon() {}
   registerEvent() {}
   addSettingTab() {}
+  registerMarkdownPostProcessor(callback, priority) { assert.equal(priority, 1000); assert.equal(typeof callback, 'function'); }
 }
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../obsidian-plugin/main.js'), 'utf8'), {
   module: moduleStub, process, URL, console,
@@ -47,7 +48,7 @@ const { core } = moduleStub.exports;
     const source = path.join(directory, '中文 & sample.md');
     const photo = path.join(directory, 'pixel.png');
     fs.writeFileSync(photo, pixelPNG());
-    const original = '# Test\n\nHello world.\n\n$$\n\\begin{align*}a &= b\\end{align*}\n$$\n\n![[pixel.png]]\n\n```text\n![[leave-literal.png]]\n```\n\n`[[literal]]`\n';
+    const original = '# Test\n\nHello world.\n\n$$\n\\begin{align*}a &= b \\\\\n\n c &= d\\end{align*}\n$$\n\n![[pixel.png]]\n\n```text\n![[leave-literal.png]]\n```\n\n`[[literal]]`\n';
     fs.writeFileSync(source, original);
     for (const value of [source, `"${source}"`, `[sample](<${source}>)`, require('url').pathToFileURL(source).href, '[[中文 & sample]]', 'obsidian://open?file=' + encodeURIComponent('中文 & sample.md')]) {
       assert.equal(core.parsePaths(value, directory)[0], source);
@@ -60,6 +61,9 @@ const { core } = moduleStub.exports;
     assert(normalized.includes('`[[literal]]`'));
     assert(normalized.includes(photo.replace(/\\/g, '/')));
     assert.throws(() => core.prepareMarkdown('![[missing.png]]', source));
+    for (const fixture of JSON.parse(fs.readFileSync(path.join(__dirname, 'math-cases.json'), 'utf8'))) {
+      assert.equal(core.prepareMarkdown(fixture.input, source), fixture.expected, fixture.name);
+    }
     console.log('Plugin registration, legacy settings migration, path parsing and protected code normalization passed.');
     if (process.argv.includes('--integration')) {
       // Real Pandoc test; fixture uses PNG so PDF and Word embed the same resource.
